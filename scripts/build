@@ -1,0 +1,387 @@
+#!/usr/bin/php
+<?php 
+//-----------------------------------------------------------------------------
+//!**** Constants ****
+//-----------------------------------------------------------------------------
+
+define("VERSION", '0.0.1');
+
+//-----------------------------------------------------------------------------
+//!**** Default Options ****
+//-----------------------------------------------------------------------------
+
+$options = new stdClass;
+$options->codeSniffer = '--standard=CakePHP';
+$options->apigen = '--config apigen.config';
+
+$options->svn = new stdClass;
+$options->svn->m = '-m "Build Script Update"';
+
+$options->phpunit = '--colors';
+
+$options->debug = false;
+//-----------------------------------------------------------------------------
+//!**** Get Command Line Options ****
+//-----------------------------------------------------------------------------
+
+if($argc > 1){
+	$shortOptions = '';
+	$shortOptions .=  'm:';
+	
+	$longOptions = array(
+		'cs_standard:',
+		'api_config:',
+		'file:',
+		'noCS',
+		'noDoc',
+		'noSvn',
+		'noTest',
+		'help'
+	);
+	
+	$cliOptions = getopt($shortOptions, $longOptions);
+	foreach ( $cliOptions as $option => $value) {
+		switch ($option) {
+			case 'm':
+				$options->svn->m = '-m "' . $value . '"' ;
+				break;
+			
+			case 'cs_standard':
+				$options->codeSniffer = '--standard=' . $value;
+				break;
+			
+			case 'api_config':
+				$options->apigen = '--config ' . $value;
+				break;
+				
+			case 'file':
+				$options->file = explode(',', $value);
+				break;
+				
+			case 'noCS':
+				$options->noCS = true;
+				break;
+
+			case 'noDoc':
+				$options->noDoc = true;
+				break;
+
+			case 'noSvn':
+				$options->noSvn = true;
+				break;
+				
+			case 'noTest':
+				$options->noTest = true;
+				break;
+				
+			case 'help':
+				echo "\n"; 
+				echo "CoreAPI Build Script v0.0.1\n";
+				echo "---------------------------\n";
+				echo "Ussage:\n";
+				echo "\t./build [options]\n";
+				echo "\n";
+				echo "Options:\n";
+				echo "\t -m             <value>  SVN commit notes.\n";
+				echo "\t --cs_standard  <value>  PHP CodeSniffer standard.\n";
+				echo "\t --api_config   <file>   ApiGen configuration file. \n";
+				echo "\t --file         <file>   ApiGen configuration file. \n";
+				echo "\t --noCS                  Disable code standard checking. \n";
+				echo "\t --noDoc                 Disable documentation generation. \n";
+				echo "\t --noSvn                 Disable commit to repository. \n";
+				echo "\t --noTest                Disable unit tests. \n";
+				echo "\t --help                  Displays this message. \n";
+				echo "\n"; 
+				exit;
+			
+			default:
+				echo "Unreconized option for help try ./build --help.";
+				exit;
+		}
+	}
+	
+}
+
+//-----------------------------------------------------------------------------
+//!**** main ****
+//-----------------------------------------------------------------------------
+
+echo "\033[34;1;4mCoreAPI Build Script v" . VERSION . "\033[0m\n";
+
+if ( isset($options->file) && ! is_null($options->file) ) {
+	$phpfiles = $options->file;
+} else {
+	$phpfiles = findPHPFiles();
+}
+
+//!	codeSniff()
+if( ! isset($options->noCS) || $options->noCS !== true){
+	codeSniff($options, $phpfiles);	
+}
+
+//!	unitTest()
+if( ! isset($options->noTest) || $options->noTest !== true ){
+	unitTest($options, $phpfiles);
+}
+
+//!	generateDocumentation()
+if ( ! isset($options->noDoc) || $options->noDoc !== true) { 
+	generateDocumentation($options); 
+}
+
+//!	updateReop()
+if ( ! isset($options->noSvn) || $options->noSvn !== true) { 
+	updateRepo($options); 
+}
+
+//-----------------------------------------------------------------------------
+//!**** Functions ****
+//-----------------------------------------------------------------------------
+
+function codeSniff ($options, $phpFiles) {
+	echo "\n\033[1;4mChecking Coding Standards:\033[0m\n\n";
+	
+	$testIfInstalled = `phpcs --help`;
+	$testFor = 'command not found';
+	
+	
+	$exclude = array( 'Tests/', '.test.');
+	if (strpos($testIfInstalled, $testFor) !== false ) {
+		echo "PHP_CodeSniffer is not installed. Do you wish to continue?  Type 'yes' to install or 'continue' to skip: ";
+		$handle = fopen ("php://stdin","r");
+		$line = fgets($handle);
+		
+		var_dump($line);
+		switch (trim($line)) {
+			case 'yes':
+				$commandResults = `sudo pear install PHP_CodeSniffer`;
+				echo $commandResults;
+				while (strpos($commandResults, 'Password:')) {
+					$password = fgets($handle);
+					$commandResults = `{$password}`;
+					echo $commandResults;
+				}
+				passthru('pear channel-discover pear.cakephp.org');
+				$commandResults = `sudo pear install cakephp/CakePHP_CodeSniffer`;
+				echo $commandResults;
+				while (strpos($commandResults, 'Password:')) {
+					$password = fgets($handle);
+					$commandResults = `{$password}`;
+					echo $commandResults;
+				}
+				
+				codeSniff($options, $phpFiles); 
+				break;
+			
+			case 'continue':
+				return false;
+			
+			default:
+				echo "\n";
+				exit;
+		} 
+		
+		echo "\n";
+	} else {
+		if ($phpFiles === false) {
+			echo "Coding standards up to date. \n";
+		} else { 
+			foreach($phpFiles as $key => $value){
+				if (! contains($value, $exclude) ) {
+					$csErrors = false;
+					$csWarnings = false;
+			
+					$codeSniffer =  `phpcs $options->codeSniffer $value`;
+					if ($codeSniffer == '') {
+						echo $value . " Coding Standard Check \033[32m[PASSED]\033[37m\n";
+		
+					} else {
+						$codeSniffer = explode("\n", $codeSniffer);
+						
+						foreach ($codeSniffer as $rowNum => $row ){
+							if (strpos($row, '| ERROR   |') !== false || stripos($row, '| ERROR |') !== false) {
+								$csErrors = true;
+							} elseif (strpos($row, '| WARNING |') !== false) {
+								$csWarnings = true;
+							}						
+						}
+						if ($csErrors) {
+							echo $value . " Coding Standard Check \033[31m[FAILED]\033[37m\n";
+						} elseif ($csWarnings) {
+							echo $value . " Coding Standard Check \033[33m[PASSED WITH WARNINGS]\033[37m\n";	
+						}		
+				
+						foreach ($codeSniffer as $row ){
+							echo $row . "\n";						
+						}
+						if ($csErrors) {
+							echo "Errors were encountered. Do you wish to continue?  Type 'yes' to continue: ";
+							$handle = fopen ("php://stdin","r");
+							$line = fgets($handle);
+							
+							if(trim($line) != 'yes'){
+							    echo "\n";
+							    exit;
+							}
+							echo "\n";
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+function contains($haystack, array $needles) {
+	global $options;  //Bad I know 
+	
+	if ($options->debug){ 
+		echo "Haystack: $haystack \n";
+	}
+	foreach ($needles as $needle) {
+		if ($options->debug){
+			echo "Needle: $needle\n";
+		}
+		if ( stripos($haystack, $needle) !== false) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function findPHPFiles() {
+	$svn = `svn status`;
+	$phpExtentsions = array('.php', '.phtml', '.php4', '.php3', '.php5', '.phps');
+	$phpfiles;
+	
+	if( ! contains($svn, $phpExtentsions)){
+		return false;
+	} else { 
+		$svn = explode("\n", $svn);
+		foreach ($svn as $file) {
+			$file = substr($file, 8);
+			if(contains($file, $phpExtentsions) && file_exists($file)){
+				$phpfiles[] = $file;
+			}
+		}
+		return $phpfiles;
+	}
+}
+
+function generateDocumentation($options) {
+	echo "\n\033[1;4mGenerating Documentation:\033[0m\n\n";
+	passthru('./scripts/docgen');
+	
+}
+
+function unitTest($options, $phpfiles){
+	echo "\n\033[1;4mPerforming Unit Tests:\033[0m\n\n";
+	
+	$exclude = array('Views/', 'Tests/', '.view', '.ini');
+	$unitErrors = false;
+	$testableFiles = 0;
+	
+	$testIfInstalled = `phpunit --version`;
+	$testFor = 'command not found';
+	if (strpos($testIfInstalled, $testFor) !== false ) {
+		echo "PIPUnit is not installed. Do you wish to continue?  Type 'yes' to install or 'continue' to skip: ";
+		$handle = fopen ("php://stdin","r");
+		$line = fgets($handle);
+		
+		var_dump($line);
+		switch (trim($line)) {
+			case 'yes':
+				passthru ("pear config-set auto_discover 1 1>&1");
+
+				$commandResults = `sudo pear install --alldeps pear.phpunit.de/PHPUnit`;
+				echo $commandResults;
+				while (strpos($commandResults, 'Password:')) {
+					$password = fgets($handle);
+					$commandResults = `{$password}`;
+					echo $commandResults;
+				}
+				unitTest($options, $phpfiles);
+				break;
+			
+			case 'continue':
+				return false;
+			
+			default:
+				echo "\n";
+				exit;
+		} 
+		
+		echo "\n";
+		
+	} else {
+		if ($phpfiles !== false) { 
+			foreach ($phpfiles as $file) {
+				if (! contains($file, $exclude) ) {
+					$testableFiles++;
+					
+					$testFile = 'Tests/' . str_replace('.php', '.test.php', $file );
+					
+					if(file_exists($testFile)) {
+						$unitTest = `phpunit $options->phpunit $testFile 2>&1`;
+						
+						if (! stripos($unitTest,'OK (')) {
+							echo $file . " Unit Test \033[31m[FAILED]\033[37m\n";
+							echo $unitTest;
+							$unitErrors = true;	
+						} else {
+							echo $file . " Unit Test \033[32m[PASSED]\033[37m\n";	
+						}
+						
+					} else {
+						echo $file . " Unit Test \033[31m[FAILED]\033[37m\n";
+						echo "\n\t1) No unit test found for file.\n";
+						$unitErrors = true;
+					}
+		
+					if ($unitErrors) {
+						echo "\nErrors were encountered. Do you wish to continue?  Type 'yes' to continue: ";
+						$handle = fopen ("php://stdin","r");
+						$line = fgets($handle);
+						
+						if(trim($line) != 'yes'){
+						    echo "\n";
+						    exit;
+						}
+						echo "\n";
+					}
+				}
+			}
+		}
+	}
+	
+	if ($testableFiles === 0) {
+		echo "Unit test up to date. \n";
+	}
+}
+
+function updateRepo($options) {
+	echo "\n\033[1;4mUpdating Repository:\033[0m\n\n";
+	
+	$status = `svn status`;
+	if (stripos($status, '?') !== false) {
+		$files = explode("\n", $status);
+		$addFiles = null;
+
+		foreach ($files as $file) {
+			if (stripos($file, '?') !== false) {
+				$file = substr($file, 8);
+				
+				if( is_null($addFiles) ){
+					$addFiles = $file;
+				} else {
+					$addFiles .= ', ' . $file;
+				}
+			}
+		} 
+		
+		passthru ("svn add $addFiles 1>&1");
+	}
+	//passthru ("svn add 1>&1");
+	$option = $options->svn->m;
+	passthru ("svn commit $option 1>&1");
+}

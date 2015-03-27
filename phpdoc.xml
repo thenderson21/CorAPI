@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<phpdoc>
+  <title>CoreAPI</title>
+  <parser>
+    <target>./tmp</target>
+  </parser>
+  <transformer>
+    <target>./tmp</target>
+  </transformer>
+  <transformations>
+    <template name="responsive" />
+  </transformations>
+  <files>
+   <directory>.</directory>
+   <ignore>Test/*</ignore>
+   <ignore>vendor/*</ignore>
+   <ignore>tmp/*</ignore>
+   <ignore>test.*</ignore>
+  </files>
+</phpdoc>
