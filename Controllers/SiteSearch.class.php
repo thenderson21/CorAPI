@@ -2,10 +2,10 @@
 /**
  * The class file for the SiteSearch class.
  *
- * @link http://www.spe.org
+ * @link https://github.com/thenderson21/CorAPI/
  * @copyright Copyright © Todd Henderson
  * @license http://opensource.org/licenses/MIT The MIT License (MIT)
- * @author Todd Henderson <thenderson@spe.org>
+ * @author Todd Henderson <todd@todd-henderson.me>
  * @version $Id$
  * @since 8/13/13
  * @package CoreAPI/Controllers/Search
